@@ -1,0 +1,18 @@
+# Processing & Math - Análisis y manejo de datos financieros
+pandas>=2.0.0
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Financial Data & Market APIs - Obtención de precios e indicadores
+yfinance>=0.2.30
+requests>=2.31.0
+
+# Technical Analysis & Quantitative Indicators - Cálculo de métricas e indicadores
+pandas-ta>=0.3.14b0
+
+# Environment & Config - Manejo de variables de entorno y configuración (.env)
+python-dotenv>=1.0.0
+
+# Testing & Coverage - Calidad de código y ejecución de tests
+pytest>=7.4.0
+pytest-cov>=4.1.0
