@@ -57,3 +57,19 @@ def test_extraer_estados_financieros_exito(mock_datos_financieros_validos):
         assert "2023-12-31" in df_income_resultado.index
         assert "Total Revenue" in df_income_resultado.columns
 
+def test_extraer_estados_financieros_vacío():
+    """
+    Verifica que la función lance un ValueError cuando la API devuelve DataFrames vacíos.
+    """
+    with patch("yfinance.Ticker") as mock_ticker_class:
+        instancia_mock = MagicMock()
+        instancia_mock.financials = pd.DataFrame()
+        instancia_mock.balance_sheet = pd.DataFrame()
+        instancia_mock.cashflow = pd.DataFrame()
+
+        mock_ticker_class.return_value = instancia_mock
+
+        with pytest.raises(ValueError) as info_error:
+            extraer_estados_financieros("YPF a ")
+
+        assert "YPF A" in str(info_error.value)
