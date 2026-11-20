@@ -7,7 +7,7 @@ from typing import Dict, List
 import pandas as pd
 import pytest
 
-from app.metrics.calculator import _obtener_ultimo_dato, calcular_pilar_rentabilidad
+from app.metrics.calculator import _obtener_ultimo_dato, calcular_pilar_rentabilidad, calcular_pilar_salud
 
 def test_obtener_ultimo_dato_exito():
     """
@@ -105,3 +105,65 @@ def test_calcular_pilar_rentabilidad_division_por_cero():
     assert resultados["roe"] == 0.0
     assert resultados["margen_operativo"] == 0.0
     assert resultados["margen_neto"] == 0.0
+
+def test_calcular_pilar_salud_exito():
+    """
+    Verifica el cálculo exacto de Deuda/EBITDA y Liquidez Corriente bajo condiciones financiera esaludables.
+    """
+    df_income: pd.DataFrame = pd.DataFrame(
+        {
+            "EBITDA": [400.0, 300.0]
+        },
+        index=["2023-21-31", "2022-12-31"]
+    )
+
+    df_balance: pd.DataFrame = pd.DataFrame(
+        {
+            "Total Debt": [600.0, 210.0],
+            "Current Assets": [300.0, 230.0],
+            "Current Liabilities": [200.0, 120.0]
+        },
+        index=["2023-12-31","2022-12-31"]
+    )
+
+    estados_simulados: Dict[str, pd.DataFrame] = {
+       "income_statement": df_income,
+       "balance_sheet": df_balance,
+       "cash_flow": pd.DataFrame()
+    }
+
+    resultado_metricas: Dict[str, float] = calcular_pilar_salud(estados_financieros=estados_simulados)
+
+    assert resultado_metricas["deuda_ebitda"] == pytest.approx(1.5)
+    assert resultado_metricas["liquidez_corriente"] == pytest.approx(1.5)
+
+def test_calcular_pilar_salud_casos_bordes():
+    """
+    Verificamos la penalización máxima cuando hay deuda con EBITDA negativo y la protección contra división por cero en pasivos corrientes.
+    """
+    df_income: pd.DataFrame = pd.DataFrame(
+        {
+            "EBITDA": [-50.0]
+        },
+        index=["2023-12-31"]
+    )
+
+    df_balance: pd.DataFrame = pd.DataFrame(
+        {
+            "Total Debt": [500.0],
+            "Current Assets": [100.0],
+            "Current Liabilities": [0.0]
+        },
+        index=["2023-12-31"]
+    )
+
+    estados_simulados: Dict[str, pd.DataFrame] = {
+        "income_statement": df_income,
+        "balance_sheet": df_balance,
+        "cash_flow": pd.DataFrame()
+    }
+
+    resultado_metricas: Dict[str, float] = calcular_pilar_salud(estados_financieros= estados_simulados)
+
+    assert resultado_metricas["deuda_ebitda"] == pytest.approx(10.0)
+    assert resultado_metricas["liquidez_corriente"] == pytest.approx(0.0)
