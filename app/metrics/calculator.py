@@ -4,7 +4,7 @@ Módulo de Cálculo de Métricas Financieras.
 Transforma los DataFrames de estados contables limpios en ratios financieros agrupados por los 4 pilares del modelo cuantitativo.
 """
 
-from typing import Dict, List
+from typing import Dict, List, Any
 import pandas as pd
 
 def _obtener_ultimo_dato(
@@ -182,3 +182,114 @@ def calcular_pilar_flujo_caja(
     }
 
     return metricass_flujo_caja
+
+def calcular_pilar_valuacion(
+    estados_financieros: Dict[str, pd.DataFrame],
+    datos_mercado: Dict[str, Any]
+) -> Dict[str, float]:
+    """
+    Calcula las 2 métricas del Pilar 4 (Valuación): Ratio P/E (Price-to-Earnings)
+    y Ratio EV/EBITDA.
+
+    Entrada:
+        estados_financieros: Diccionario con 'income_statement', 'balance_sheet' y 'cash_flow'.
+        datos_mercado: Diccionario con cotizaciones y múltiplos de mercado (ticker.info).
+    Salida:
+        Dict[str, float]: Diccionario con los múltiplos de valuación.
+    """
+    # --------------------------------------------------------------------------
+    # PASO 1: Desempaquetar los estados contables necesarios para este pilar
+    # --------------------------------------------------------------------------
+    df_income: pd.DataFrame = estados_financieros["income_statement"]
+    df_balance: pd.DataFrame = estados_financieros["balance_sheet"]
+
+    # --------------------------------------------------------------------------
+    # PASO 2: Extraer los rubros contables crudos del último año fiscal
+    # --------------------------------------------------------------------------
+    ganancia_neta: float = _obtener_ultimo_dato(
+        dataframe_estado=df_income,
+        nombres_columnas_posibles=["Net Income", "Net Income Common Stockholders"]
+    )
+    ebitda: float = _obtener_ultimo_dato(
+        dataframe_estado=df_income,
+        nombres_columnas_posibles=["EBITDA", "Normalized EBITDA"]
+    )
+    deuda_total: float = _obtener_ultimo_dato(
+        dataframe_estado=df_balance,
+        nombres_columnas_posibles=["Total Debt", "Long Term Debt And Capital Lease Obligation"]
+    )
+    efectivo_caja: float = _obtener_ultimo_dato(
+        dataframe_estado=df_balance,
+        nombres_columnas_posibles=[
+            "Cash And Cash Equivalents",
+            "Cash Cash Equivalents And Short Term Investments"
+        ]
+    )
+
+    # --------------------------------------------------------------------------
+    # PASO 3: Extraer valores de mercado de forma segura (manejando None)
+    # --------------------------------------------------------------------------
+    market_cap_crudo: Any = datos_mercado.get("marketCap", 0.0)
+    market_cap: float = float(market_cap_crudo) if market_cap_crudo is not None else 0.0
+
+    ev_crudo: Any = datos_mercado.get("enterpriseValue", None)
+    enterprise_value: float = 0.0
+
+    if ev_crudo is not None:
+        enterprise_value = float(ev_crudo)
+    elif market_cap > 0.0:
+        # Cálculo de respaldo si Yahoo Finance no provee el Enterprise Value directo
+        enterprise_value = market_cap + deuda_total - efectivo_caja
+
+    # --------------------------------------------------------------------------
+    # PASO 4: Calcular Ratio P/E con penalización si hay pérdidas
+    # --------------------------------------------------------------------------
+    pe_ratio: float = 100.0
+
+    if market_cap > 0.0 and ganancia_neta > 0.0:
+        pe_ratio = market_cap / ganancia_neta
+
+    # --------------------------------------------------------------------------
+    # PASO 5: Calcular Ratio EV/EBITDA con penalización si EBITDA <= 0
+    # --------------------------------------------------------------------------
+    ev_ebitda: float = 50.0
+
+    if enterprise_value > 0.0 and ebitda > 0.0:
+        ev_ebitda = enterprise_value / ebitda
+
+    # --------------------------------------------------------------------------
+    # PASO 6: Empaquetar y retornar el diccionario de métricas del Pilar 4
+    # --------------------------------------------------------------------------
+    metricas_valuacion: Dict[str, float] = {
+        "pe_ratio": pe_ratio,
+        "ev_ebitda": ev_ebitda
+    }
+
+    return metricas_valuacion
+
+
+def calcular_metricas_empresa(
+    estados_financieros: Dict[str, pd.DataFrame],
+    datos_mercado: Dict[str, Any]
+) -> Dict[str, float]:
+    """
+    Ejecuta los 4 pilares analíticos sobre una empresa y consolida sus 9 ratios financieros en un único diccionario.
+    """
+    # --------------------------------------------------------------------------
+    # PASO 1: Ejecutar cada pilar de forma modular
+    # --------------------------------------------------------------------------
+    pilar_1: Dict[str, float] = calcular_pilar_rentabilidad(estados_financieros)
+    pilar_2: Dict[str, float] = calcular_pilar_salud(estados_financieros)
+    pilar_3: Dict[str, float] = calcular_pilar_flujo_caja(estados_financieros)
+    pilar_4: Dict[str, float] = calcular_pilar_valuacion(estados_financieros, datos_mercado)
+
+    # --------------------------------------------------------------------------
+    # PASO 2: Consolidar todas las métricas en un diccionario plano para la Capa 3
+    # --------------------------------------------------------------------------
+    perfil_metricas: Dict[str, float] = {}
+    perfil_metricas.update(pilar_1)
+    perfil_metricas.update(pilar_2)
+    perfil_metricas.update(pilar_3)
+    perfil_metricas.update(pilar_4)
+
+    return perfil_metricas
