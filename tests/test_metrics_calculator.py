@@ -7,7 +7,10 @@ from typing import Dict, List
 import pandas as pd
 import pytest
 
-from app.metrics.calculator import _obtener_ultimo_dato, calcular_pilar_rentabilidad, calcular_pilar_salud
+from app.metrics.calculator import (_obtener_ultimo_dato, 
+                                    calcular_pilar_rentabilidad, 
+                                    calcular_pilar_salud,
+                                    calcular_pilar_flujo_caja)
 
 def test_obtener_ultimo_dato_exito():
     """
@@ -167,3 +170,65 @@ def test_calcular_pilar_salud_casos_bordes():
 
     assert resultado_metricas["deuda_ebitda"] == pytest.approx(10.0)
     assert resultado_metricas["liquidez_corriente"] == pytest.approx(0.0)
+
+def test_calcular_pilar_flujo_caja_exito():
+    """"
+    Verifica el cálculo de Margen FCF y Conversión de Caja cuando el CAPEX viene con signo negativo.
+    """
+    df_cashflow: pd.DataFrame = pd.DataFrame(
+        {
+            "Operating Cash Flow": [300.0],
+            "Capital Expenditure": [-60.0]
+        },
+        index=["2023-12-31"]
+    )
+
+    df_income: pd.DataFrame = pd.DataFrame(
+        {
+            "Total Revenue": [1000.0],
+            "Net Income": [250.0]
+        },
+        index=["2023-12-31"]
+    )
+
+    estados_simulados: Dict[str, pd.DataFrame] = {
+        "income_statement": df_income,
+        "balance_sheet": pd.DataFrame(),
+        "cash_flow": df_cashflow
+    }
+
+    resultado = calcular_pilar_flujo_caja(estados_financieros=estados_simulados)
+
+    assert resultado["fcf_margin"] == pytest.approx(0.24)
+    assert resultado["conversion_caja"] == pytest.approx(1.20)
+
+def test_calcular_pilar_flujo_caja_casos_borde():
+    """
+    Verifica la protección contra división por cero cuando no hay ventas
+    y cuando la ganancia neta es negativa.
+    """
+    df_cashflow = pd.DataFrame(
+        {
+            "Operating Cash Flow": [-20.0],
+            "Capital Expenditure": [10.0],
+        },
+        index=["2023-12-31"]
+    )
+    df_income = pd.DataFrame(
+        {
+            "Total Revenue": [0.0],
+            "Net Income": [-50.0],
+        },
+        index=["2023-12-31"]
+    )
+
+    estados_borde = {
+        "income_statement": df_income,
+        "balance_sheet": pd.DataFrame(),
+        "cash_flow": df_cashflow,
+    }
+
+    resultado = calcular_pilar_flujo_caja(estados_borde)
+
+    assert resultado["fcf_margin"] == 0.0
+    assert resultado["conversion_caja"] == 0.0
