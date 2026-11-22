@@ -125,3 +125,60 @@ def calcular_pilar_salud(
     }
 
     return metricas_salud
+
+def calcular_pilar_flujo_caja(
+    estados_financieros: Dict[str, pd.DataFrame]
+) -> Dict[str, float]:
+    """"
+    Calcula las 2 métricas del Pilar (Flujo de Caja): Margen de Flujo de
+    Caja Libre (FCF Margin) y Ratio de Conversión de Caja.
+
+    Entrada:
+        estados_financieros: Diccionario generado por fetcher.py con las claves
+                             'income_statement', 'balance_sheet' y 'cash_flow'.
+    Salida:
+        Dict[str, float]: Diccionario con los ratios de generación de efectivo.
+    """
+    #---------------------------------------------------------------------------
+    # PASO 1: Desempaquetar los estados contables necesarios
+    #---------------------------------------------------------------------------
+    df_cashflow: pd.DataFrame = estados_financieros["cash_flow"]
+    df_income: pd.DataFrame = estados_financieros["income_statement"]
+    #---------------------------------------------------------------------------
+    # PASO 2: Extrae los rubros contables crudos del último año fiscal.
+    #---------------------------------------------------------------------------
+    # fcf_margin: Es el dinero efectivo que sobra después de operar el negocio y pagar las inversiones obligatorias en activos físicos o tecnológicos (maquinarias, servidores, plantas) necesarias para mantenerlo funcionando (CAPEX o Capital Expenditures).
+    flujo_operativo: float = _obtener_ultimo_dato(dataframe_estado=df_cashflow, nombres_columnas_posibles=["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"])
+    capex_crudo: float = _obtener_ultimo_dato(dataframe_estado=df_cashflow, nombres_columnas_posibles=["Capital Expenditure", "Capital Expenditures"])
+    ventas_totales: float = _obtener_ultimo_dato(dataframe_estado=df_income, nombres_columnas_posibles=["Total Revenue", "Operating Revenue"])
+    ganancia_neta: float = _obtener_ultimo_dato(dataframe_estado=df_income, nombres_columnas_posibles=["Net Income", "Net Income Common Stockholders"])
+    #-----------------------------------------------------------------------------
+    # PASO 3: Calcular el Flujo de la Caja Libre (FCF) normalizando signo de CAPEX
+    #-----------------------------------------------------------------------------
+    inversion_capex: float = abs(capex_crudo)
+    free_cash_flow: float = flujo_operativo - inversion_capex
+    #-----------------------------------------------------------------------------
+    # PASO 4: Calcular Margen FCF con protección contra division por cero
+    #-----------------------------------------------------------------------------
+    fcf_margin: float = 0.0
+
+    if ventas_totales > 0.0:
+        fcf_margin: float = free_cash_flow / ventas_totales
+
+    #-----------------------------------------------------------------------------
+    # PASO 5: Calcular Conversión de Caja
+    #-----------------------------------------------------------------------------
+    conversion_caja: float = 0.0
+
+    if ganancia_neta > 0.0:
+        conversion_caja: float = flujo_operativo / ganancia_neta
+
+    #-----------------------------------------------------------------------------
+    # PASO 6: Empaquetado y retorno del diccionario de métricas
+    #-----------------------------------------------------------------------------
+    metricass_flujo_caja: Dict[str, float] = {
+        "fcf_margin": fcf_margin,
+        "conversion_caja": conversion_caja
+    }
+
+    return metricass_flujo_caja
