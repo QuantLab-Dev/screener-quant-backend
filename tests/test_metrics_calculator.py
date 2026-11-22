@@ -10,7 +10,9 @@ import pytest
 from app.metrics.calculator import (_obtener_ultimo_dato, 
                                     calcular_pilar_rentabilidad, 
                                     calcular_pilar_salud,
-                                    calcular_pilar_flujo_caja)
+                                    calcular_pilar_flujo_caja,
+                                    calcular_metricas_empresa,
+                                    calcular_pilar_valuacion)
 
 def test_obtener_ultimo_dato_exito():
     """
@@ -32,7 +34,7 @@ def test_obtener_ultimo_dato_exito():
     ultimo_dato_exito: float = _obtener_ultimo_dato(df_prueba,nombres_columnas_posibles)
     assert ultimo_dato_exito == 1000.0
 
-    # Caso de fallo: la métrica contable no se encuentra en el DataFrame
+    # Caso de fallo: la métrica contable no se encuentra en esl DataFrame
     ultimo_dato_fallo: float = _obtener_ultimo_dato(df_prueba,nombres_columnas_no_posibles)
     assert ultimo_dato_fallo == 0.0
 
@@ -232,3 +234,99 @@ def test_calcular_pilar_flujo_caja_casos_borde():
 
     assert resultado["fcf_margin"] == 0.0
     assert resultado["conversion_caja"] == 0.0
+
+def test_calcular_pilar_valuacion_exito_y_respaldo_ev():
+    """
+    Verifica el cálculo de P/E y EV/EBITDA cuando enterpriseValue no viene
+    en datos_mercado y debe calcularse manualmente desde el balance.
+    """
+    df_income = pd.DataFrame(
+        {"Net Income": [250.0], "EBITDA": [400.0]},
+        index=["2023-12-31"]
+    )
+    df_balance = pd.DataFrame(
+        {"Total Debt": [600.0], "Cash And Cash Equivalents": [200.0]},
+        index=["2023-12-31"]
+    )
+
+    estados_simulados = {
+        "income_statement": df_income,
+        "balance_sheet": df_balance,
+        "cash_flow": pd.DataFrame(),
+    }
+    datos_mercado = {"marketCap": 3000.0}
+
+    resultado = calcular_pilar_valuacion(estados_simulados, datos_mercado)
+
+    assert resultado["pe_ratio"] == pytest.approx(12.0)
+    assert resultado["ev_ebitda"] == pytest.approx(8.5)
+
+
+def test_calcular_pilar_valuacion_ev_directo_y_casos_borde():
+    """
+    Verifica la lectura directa de enterpriseValue cuando está disponible y
+    la aplicación de penalizaciones cuando hay ganancias o EBITDA negativos.
+    """
+    df_income_negativo = pd.DataFrame(
+        {"Net Income": [-100.0], "EBITDA": [-20.0]},
+        index=["2023-12-31"]
+    )
+    estados = {
+        "income_statement": df_income_negativo,
+        "balance_sheet": pd.DataFrame(),
+        "cash_flow": pd.DataFrame(),
+    }
+    datos_mercado = {"marketCap": 1500.0, "enterpriseValue": 1800.0}
+
+    resultado = calcular_pilar_valuacion(estados, datos_mercado)
+
+    assert resultado["pe_ratio"] == pytest.approx(100.0)
+    assert resultado["ev_ebitda"] == pytest.approx(50.0)
+
+
+def test_calcular_metricas_empresa_integracion():
+    """
+    Verifica que la función orquestadora consolide las 9 métricas de los 4 pilares
+    en un único diccionario plano.
+    """
+    df_income = pd.DataFrame(
+        {
+            "Total Revenue": [1000.0],
+            "Operating Income": [300.0],
+            "Net Income": [250.0],
+            "EBITDA": [400.0],
+        },
+        index=["2023-12-31"]
+    )
+    df_balance = pd.DataFrame(
+        {
+            "Stockholders Equity": [500.0],
+            "Total Debt": [600.0],
+            "Current Assets": [300.0],
+            "Current Liabilities": [200.0],
+            "Cash And Cash Equivalents": [200.0],
+        },
+        index=["2023-12-31"]
+    )
+    df_cashflow = pd.DataFrame(
+        {
+            "Operating Cash Flow": [300.0],
+            "Capital Expenditure": [-60.0],
+        },
+        index=["2023-12-31"]
+    )
+
+    estados = {
+        "income_statement": df_income,
+        "balance_sheet": df_balance,
+        "cash_flow": df_cashflow,
+    }
+    datos_mercado = {"marketCap": 3000.0, "enterpriseValue": 3400.0}
+
+    perfil = calcular_metricas_empresa(estados, datos_mercado)
+
+    assert len(perfil) == 9
+    assert perfil["roe"] == pytest.approx(0.50)
+    assert perfil["deuda_ebitda"] == pytest.approx(1.5)
+    assert perfil["fcf_margin"] == pytest.approx(0.24)
+    assert perfil["pe_ratio"] == pytest.approx(12.0)
